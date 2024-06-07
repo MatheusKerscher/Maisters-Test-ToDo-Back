@@ -13,7 +13,9 @@ import org.springframework.stereotype.Service;
 
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,8 +23,6 @@ import static com.br.matheus.kerscher.todolist.todo_list.utils.BrazilTime.findCu
 
 @Service
 public class TaskService {
-
-    private ModelMapper modelMapper = new ModelMapper();
 
     @Autowired
     TaskRepository repository;
@@ -33,11 +33,12 @@ public class TaskService {
         List<Task> taskList =  repository.findAll();
 
         if(taskList.isEmpty()) {
-            throw new EntityNotFoundException("Tasks not found");
+            throw new EntityNotFoundException("No tasks were found");
         }
 
         for(Task t : taskList) {
-            TaskResponse item = modelMapper.map(t, TaskResponse.class);
+            TaskResponse item = new TaskResponse(t.getId(), t.getTitle(), t.getDescription(), t.getStatus(), t.getCreatedDate());
+
             tasks.add(item);
         }
 
@@ -47,7 +48,7 @@ public class TaskService {
     public TaskResponse findTask(Long taskId) {
         Task task = repository.findById(taskId).orElseThrow(() -> new EntityNotFoundException("Task not found"));
 
-        return modelMapper.map(task, TaskResponse.class);
+        return new TaskResponse(task.getId(), task.getTitle(), task.getDescription(), task.getStatus(), task.getCreatedDate());
     }
 
     public TaskResponse createTask(TaskRequest request) {
@@ -65,6 +66,49 @@ public class TaskService {
 
         task = repository.save(task);
 
-        return modelMapper.map(task, TaskResponse.class);
+        return new TaskResponse(task.getId(), task.getTitle(), task.getDescription(), task.getStatus(), task.getCreatedDate());
+    }
+
+    public TaskResponse updateTask(Long taskId, TaskRequest request) {
+        Task task = repository.findById(taskId).orElseThrow(() -> new EntityNotFoundException("Task not found"));
+
+        if(!TaskStatus.PENDING.equals(task.getStatus())) {
+            throw new ConflictException("Tasks can only be updated with pending status");
+        }
+
+        task.setTitle(request.getTitle());
+        task.setDescription(request.getDescription());
+
+        task = repository.save(task);
+
+        return new TaskResponse(task.getId(), task.getTitle(), task.getDescription(), task.getStatus(), task.getCreatedDate());
+    }
+
+    public TaskResponse updateTaskStatus(Long taskId, TaskStatus status) {
+        Task task = repository.findById(taskId).orElseThrow(() -> new EntityNotFoundException("Task not found"));
+
+        task.setStatus(status);
+
+        task = repository.save(task);
+
+        return new TaskResponse(task.getId(), task.getTitle(), task.getDescription(), task.getStatus(), task.getCreatedDate());
+    }
+
+    public void removeTask(Long taskId) {
+        Task task = repository.findById(taskId).orElseThrow(() -> new EntityNotFoundException("Task not found"));
+
+        if(!TaskStatus.PENDING.equals(task.getStatus())) {
+            throw new ConflictException("Tasks can only be updated with pending status");
+        }
+
+        LocalDateTime currentDate = findCurrentTime();
+        LocalDateTime creationDate = task.getCreatedDate();
+        long daysBetween = ChronoUnit.DAYS.between(creationDate, currentDate);
+
+        if (daysBetween <= 5) {
+            throw new ConflictException("Tasks can only be deleted if its creation date is older than 5 days ago");
+        }
+
+        repository.delete(task);
     }
 }
